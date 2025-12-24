@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { StockHolding, DividendData, PortfolioSummary, ProjectionPoint } from './types';
 import { fetchStockDividendData, analyzePortfolio } from './services/geminiService';
 import StockForm from './components/StockForm';
@@ -24,40 +24,46 @@ const App: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hasApiKey, setHasApiKey] = useState<boolean>(false);
-  const [isInitialCheckDone, setIsInitialCheckDone] = useState<boolean>(false);
+  const [hasApiKey, setHasApiKey] = useState<boolean>(true); // Default to true to allow UI access
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
-  // Initial connection check
+  // Initial connection check (silent)
   useEffect(() => {
     const checkKey = async () => {
-      // Check if we are in the AI Studio environment
       if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
         const selected = await window.aistudio.hasSelectedApiKey();
         setHasApiKey(selected);
       } else {
-        // In other environments, we check if the key is already present in process.env
         setHasApiKey(!!process.env.API_KEY);
       }
-      setIsInitialCheckDone(true);
     };
     checkKey();
+  }, []);
+
+  // Close settings when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+        setIsSettingsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const handleOpenKeyPicker = async () => {
     if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
       try {
         await window.aistudio.openSelectKey();
-        // GUIDELINE: Assume key selection was successful after triggering openSelectKey()
         setHasApiKey(true);
         setError(null);
         setIsSettingsOpen(false);
       } catch (err) {
-        console.error("Failed to open key picker", err);
-        setError("Could not open the API key selector. Please refresh the page.");
+        console.error("Key picker failed:", err);
       }
     } else {
-      setError("API Key selector is only available within the AI Studio environment.");
+      setError("To use DiviTrack Pro outside of AI Studio, please set your API_KEY environment variable.");
     }
   };
 
@@ -93,11 +99,11 @@ const App: React.FC = () => {
       };
       setHoldings(prev => [...prev, newHolding]);
     } catch (err: any) {
-      if (err.message === "MISSING_API_KEY" || err.message?.includes("API key") || err.message?.includes("Requested entity was not found")) {
+      if (err.message === "MISSING_API_KEY" || err.message?.includes("API key")) {
         setHasApiKey(false);
-        setError("Connection lost. Please reconnect your API key to continue fetching data.");
+        setError("API Key Required: Please use the Settings menu to connect your Gemini API key.");
       } else {
-        setError(`Failed to fetch ${ticker}. Please verify the symbol is correct.`);
+        setError(`Connection Error: Could not retrieve data for ${ticker}.`);
       }
     } finally {
       setIsLoading(false);
@@ -112,11 +118,11 @@ const App: React.FC = () => {
       const result = await analyzePortfolio(holdings, stockInfo);
       setAnalysisResult(result);
     } catch (err: any) {
-      if (err.message === "MISSING_API_KEY" || err.message?.includes("Requested entity was not found")) {
+      if (err.message === "MISSING_API_KEY") {
         setHasApiKey(false);
-        setError("API Session expired. Reconnection required for AI analysis.");
+        setError("AI Engine offline. Please check your API connection.");
       } else {
-        setError("Analysis failed. Please try again in a few moments.");
+        setError("Strategic analysis encountered an error. Please try again.");
       }
     } finally {
       setIsAnalyzing(false);
@@ -165,50 +171,9 @@ const App: React.FC = () => {
     return points;
   }, [portfolioSummary, stockInfo]);
 
-  if (isInitialCheckDone && !hasApiKey) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 selection:bg-indigo-500/30">
-        <div className="bg-slate-900 border border-slate-800 p-10 rounded-[2.5rem] shadow-2xl max-w-lg w-full text-center relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600"></div>
-          
-          <div className="w-24 h-24 bg-indigo-600/10 rounded-3xl flex items-center justify-center mb-8 mx-auto border border-indigo-500/20 transform rotate-12">
-            <i className="fas fa-lock-open text-4xl text-indigo-400 -rotate-12"></i>
-          </div>
-          
-          <h1 className="text-3xl font-black text-white mb-4 tracking-tight uppercase">DiviTrack <span className="text-indigo-500">Pro</span></h1>
-          <p className="text-slate-400 text-sm mb-10 leading-relaxed px-4">
-            Our high-performance financial engine requires a secure connection to the Gemini API to fetch real-time data and grounded projections.
-          </p>
-          
-          <div className="space-y-4">
-            <button 
-              onClick={handleOpenKeyPicker}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-indigo-600/20 flex items-center justify-center gap-3 active:scale-95 group"
-            >
-              <i className="fas fa-key group-hover:rotate-12 transition-transform"></i>
-              Connect System Key
-            </button>
-            
-            <div className="flex flex-col gap-2 pt-4">
-              <a 
-                href="https://ai.google.dev/gemini-api/docs/billing" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-xs text-slate-500 hover:text-indigo-400 transition flex items-center justify-center gap-2"
-              >
-                <i className="fas fa-info-circle"></i>
-                Required: Paid GCP Project with Search Grounding
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen pb-12 bg-slate-950 text-slate-50 font-sans selection:bg-indigo-500/30">
-      <nav className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 p-4 sticky top-0 z-50">
+      <nav className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 p-4 sticky top-0 z-[100]">
         <div className="container mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-600/20">
@@ -217,52 +182,53 @@ const App: React.FC = () => {
             <div>
               <h1 className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
                 DiviTrack <span className="text-indigo-500">Pro</span>
-                <span className="bg-slate-800 text-[8px] px-1.5 py-0.5 rounded-md text-slate-500 border border-slate-700">v2.5</span>
               </h1>
               <div className="flex items-center gap-1.5 -mt-0.5">
                 <div className={`w-1.5 h-1.5 rounded-full ${hasApiKey ? 'bg-emerald-500 shadow-[0_0_5px_#10b981]' : 'bg-rose-500 shadow-[0_0_5px_#ef4444]'} animate-pulse`}></div>
                 <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
-                  {hasApiKey ? 'Engine Operational' : 'Offline Mode'}
+                  {hasApiKey ? 'Engine Active' : 'Key Needed'}
                 </span>
               </div>
             </div>
           </div>
           
-          <div className="relative">
+          <div className="relative" ref={settingsRef}>
             <button 
               onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-              className={`flex items-center gap-3 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl transition-all border ${isSettingsOpen ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-indigo-500/50'}`}
+              className={`flex items-center gap-3 text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl transition-all border ${isSettingsOpen ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-indigo-500/50'}`}
             >
               <i className={`fas fa-cog ${isSettingsOpen ? 'rotate-90' : ''} transition-transform`}></i>
-              Settings
+              Config
             </button>
 
             {isSettingsOpen && (
-              <div className="absolute right-0 mt-3 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-4 animate-in fade-in slide-in-from-top-2 z-50">
-                <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 border-b border-slate-800 pb-2">System Controls</h3>
-                <div className="space-y-2">
+              <div className="absolute right-0 mt-3 w-72 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 animate-in fade-in slide-in-from-top-2 z-[110]">
+                <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4 border-b border-slate-800 pb-2">Environment Setup</h3>
+                <div className="space-y-3">
                   <button 
                     onClick={handleOpenKeyPicker}
-                    className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-slate-800 hover:bg-slate-700 rounded-xl transition text-left group"
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl transition text-left group shadow-lg shadow-indigo-600/10"
                   >
                     <div className="flex items-center gap-3">
-                      <i className="fas fa-key text-indigo-400 text-xs"></i>
-                      <span className="text-xs font-bold">Update API Key</span>
+                      <i className="fas fa-plug text-white text-xs"></i>
+                      <span className="text-xs font-bold text-white">Connect System Key</span>
                     </div>
-                    <i className="fas fa-chevron-right text-[10px] text-slate-600 group-hover:translate-x-1 transition-transform"></i>
+                    <i className="fas fa-chevron-right text-[10px] text-white/50 group-hover:translate-x-1 transition-transform"></i>
                   </button>
+                  
+                  <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
+                    <p className="text-[9px] text-slate-500 leading-relaxed">
+                      If running on Vercel, ensure <code className="text-indigo-400">API_KEY</code> is set in project variables.
+                    </p>
+                  </div>
+
                   <button 
                     onClick={() => { localStorage.clear(); window.location.reload(); }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 bg-slate-800/50 hover:bg-rose-900/20 hover:text-rose-400 rounded-xl transition text-left"
+                    className="w-full flex items-center gap-3 px-4 py-3 bg-slate-800/30 hover:bg-rose-900/20 hover:text-rose-400 rounded-xl transition text-left"
                   >
-                    <i className="fas fa-trash-alt text-xs"></i>
-                    <span className="text-xs font-bold">Reset All Data</span>
+                    <i className="fas fa-sync-alt text-xs"></i>
+                    <span className="text-xs font-bold">Hard Reset App</span>
                   </button>
-                </div>
-                <div className="mt-4 pt-3 border-t border-slate-800">
-                  <p className="text-[9px] text-slate-600 leading-tight">
-                    API Status: <span className={hasApiKey ? 'text-emerald-500' : 'text-rose-500'}>{hasApiKey ? 'Connected' : 'Missing'}</span>
-                  </p>
                 </div>
               </div>
             )}
@@ -272,21 +238,21 @@ const App: React.FC = () => {
 
       <main className="container mx-auto px-4 py-8">
         {error && (
-          <div className="bg-rose-500/10 border border-rose-500/50 p-4 rounded-2xl mb-8 flex items-center justify-between text-rose-300 animate-in slide-in-from-top-4">
-            <div className="flex items-center gap-3">
-              <i className="fas fa-circle-exclamation text-lg"></i>
+          <div className="bg-rose-500/10 border border-rose-500/50 p-4 rounded-2xl mb-8 flex items-center justify-between text-rose-300 animate-in slide-in-from-top-4 shadow-xl">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-rose-500/20 flex items-center justify-center">
+                <i className="fas fa-shield-virus text-lg"></i>
+              </div>
               <div>
-                <p className="text-xs font-bold uppercase tracking-tight">System Alert</p>
-                <p className="text-xs opacity-80">{error}</p>
+                <p className="text-xs font-black uppercase tracking-tight">System Notification</p>
+                <p className="text-xs font-medium opacity-90">{error}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {!hasApiKey && (
-                <button onClick={handleOpenKeyPicker} className="text-[10px] font-black uppercase bg-rose-500/20 hover:bg-rose-500/30 px-3 py-1.5 rounded-lg transition">
-                  Reconnect
-                </button>
-              )}
-              <button onClick={() => setError(null)} className="text-rose-500/50 hover:text-rose-500 p-2">
+            <div className="flex items-center gap-3">
+              <button onClick={handleOpenKeyPicker} className="text-[10px] font-black uppercase bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition shadow-lg shadow-indigo-600/20">
+                Connect Now
+              </button>
+              <button onClick={() => setError(null)} className="text-slate-500 hover:text-white p-2">
                 <i className="fas fa-times"></i>
               </button>
             </div>
@@ -300,38 +266,44 @@ const App: React.FC = () => {
             <StockForm onAdd={addHolding} isLoading={isLoading} />
             <PortfolioAnalysis onAnalyze={runAnalysis} analysis={analysisResult} isLoading={isAnalyzing} hasData={holdings.length > 0} />
             
-            <div className="bg-slate-800 p-6 rounded-[1.5rem] border border-slate-700 shadow-sm">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">Live Portfolio</h3>
-                <span className="text-[10px] font-black bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-md">
-                  {holdings.length} Positions
+            <div className="bg-slate-800 p-6 rounded-[2rem] border border-slate-700 shadow-2xl relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-600/5 blur-[50px] rounded-full"></div>
+              <div className="flex justify-between items-center mb-6 relative">
+                <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Positions List</h3>
+                <span className="text-[9px] font-black bg-slate-900 text-slate-500 px-2 py-1 rounded-md border border-slate-700">
+                  {holdings.length} ASSETS
                 </span>
               </div>
-              <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
+              <div className="space-y-3 max-h-[440px] overflow-y-auto custom-scrollbar pr-1">
                 {holdings.map(h => (
-                  <div key={h.id} className="bg-slate-900/60 p-4 rounded-2xl border border-slate-700/50 flex items-center justify-between group hover:border-indigo-500/40 transition-all">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-black text-indigo-400 text-sm tracking-tighter">{h.ticker}</span>
-                        <span className="text-[10px] text-slate-500 font-medium truncate max-w-[100px]">{stockInfo[h.ticker]?.name}</span>
+                  <div key={h.id} className="bg-slate-900/40 p-4 rounded-2xl border border-slate-700/30 flex items-center justify-between group hover:border-indigo-500/50 transition-all hover:bg-slate-900/60">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-600/10 flex items-center justify-center font-black text-indigo-400 text-xs border border-indigo-500/20 group-hover:scale-110 transition-transform">
+                        {h.ticker.substring(0, 2)}
                       </div>
-                      <div className="text-[10px] text-slate-400 flex items-center gap-3">
-                        <span className="font-bold">{h.quantity} Shares</span>
-                        <span className="text-emerald-500/80 font-black">{stockInfo[h.ticker]?.yield}% Yield</span>
+                      <div>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="font-black text-slate-100 text-sm tracking-tighter">{h.ticker}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 flex items-center gap-2 font-bold">
+                          <span>{h.quantity} UNITS</span>
+                          <span className="text-slate-700">•</span>
+                          <span className="text-emerald-500 uppercase">{stockInfo[h.ticker]?.payoutFrequency || '---'}</span>
+                        </div>
                       </div>
                     </div>
                     <button 
                       onClick={() => setHoldings(prev => prev.filter(item => item.id !== h.id))}
-                      className="text-slate-700 hover:text-rose-500 p-2 transition-colors"
+                      className="text-slate-800 hover:text-rose-500 p-2 transition-all opacity-0 group-hover:opacity-100"
                     >
-                      <i className="fas fa-minus-circle"></i>
+                      <i className="fas fa-trash-alt text-xs"></i>
                     </button>
                   </div>
                 ))}
                 {holdings.length === 0 && (
-                  <div className="text-center py-10 opacity-30">
-                    <i className="fas fa-layer-group text-3xl mb-3"></i>
-                    <p className="text-xs font-bold uppercase tracking-widest">No Holdings</p>
+                  <div className="text-center py-16 opacity-20">
+                    <i className="fas fa-database text-4xl mb-4"></i>
+                    <p className="text-xs font-black uppercase tracking-[0.2em]">Inventory Empty</p>
                   </div>
                 )}
               </div>
@@ -340,26 +312,26 @@ const App: React.FC = () => {
           
           <div className="lg:col-span-2">
             <ProjectionChart data={projectionData} />
-            <div className="mt-8 bg-slate-900/40 backdrop-blur-sm p-5 rounded-2xl border border-slate-800/50">
-              <div className="flex items-center gap-2 mb-4">
-                <i className="fas fa-quote-left text-indigo-500/40 text-xs"></i>
-                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Data Grounding Citations</h4>
+            <div className="mt-8 bg-slate-900/40 backdrop-blur-sm p-6 rounded-3xl border border-slate-800/50">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-1.5 h-6 bg-indigo-600 rounded-full"></div>
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Grounded Research Context</h4>
               </div>
               <div className="flex flex-wrap gap-3">
-                {Object.values(stockInfo).flatMap(info => info.sources).slice(0, 8).map((s, i) => (
+                {Object.values(stockInfo).flatMap(info => info.sources).slice(0, 10).map((s, i) => (
                   <a 
                     key={i} 
                     href={s.uri} 
                     target="_blank" 
                     rel="noopener noreferrer" 
-                    className="text-[10px] text-indigo-400/80 hover:text-indigo-400 hover:bg-indigo-500/10 px-3 py-1.5 rounded-lg border border-indigo-500/20 transition-all flex items-center gap-2"
+                    className="group text-[10px] text-indigo-400/70 hover:text-indigo-300 hover:bg-indigo-500/10 px-4 py-2 rounded-xl border border-indigo-500/10 transition-all flex items-center gap-2 bg-slate-900/50"
                   >
-                    <i className="fas fa-link text-[8px]"></i>
-                    {s.title}
+                    <i className="fas fa-external-link-alt text-[8px] group-hover:scale-125 transition-transform"></i>
+                    <span className="max-w-[150px] truncate font-bold">{s.title}</span>
                   </a>
                 ))}
                 {Object.values(stockInfo).length === 0 && (
-                  <p className="text-[10px] text-slate-600 italic">Awaiting citations from search tool...</p>
+                  <p className="text-[10px] text-slate-700 font-bold uppercase tracking-widest py-4 w-full text-center">Awaiting market discovery...</p>
                 )}
               </div>
             </div>
