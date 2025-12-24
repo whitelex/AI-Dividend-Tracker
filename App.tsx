@@ -7,7 +7,7 @@ import Dashboard from './components/Dashboard';
 import ProjectionChart from './components/ProjectionChart';
 import PortfolioAnalysis from './components/PortfolioAnalysis';
 
-// Fix: Use the AIStudio nominal interface to match global environment declarations and avoid property re-declaration errors.
+// Use the nominal AIStudio interface to match global environment declarations.
 declare global {
   interface Window {
     aistudio?: AIStudio;
@@ -21,7 +21,9 @@ const App: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hasApiKey, setHasApiKey] = useState<boolean>(true);
+  // Initialized to false to force the "mandatory" key selection check
+  const [hasApiKey, setHasApiKey] = useState<boolean>(false);
+  const [isInitialCheckDone, setIsInitialCheckDone] = useState<boolean>(false);
 
   // Check API Key selection status on initialization.
   useEffect(() => {
@@ -29,7 +31,11 @@ const App: React.FC = () => {
       if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
         const selected = await window.aistudio.hasSelectedApiKey();
         setHasApiKey(selected);
+      } else {
+        // If not in an environment requiring aistudio key selection, assume true
+        setHasApiKey(true);
       }
+      setIsInitialCheckDone(true);
     };
     checkKey();
   }, []);
@@ -39,7 +45,7 @@ const App: React.FC = () => {
     if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
       try {
         await window.aistudio.openSelectKey();
-        // Race condition: Assume the key selection was successful after triggering openSelectKey() and proceed to the app.
+        // Mandatory requirement: Assume selection success after triggering the dialog to avoid race conditions.
         setHasApiKey(true);
       } catch (err) {
         console.error("Failed to open key picker", err);
@@ -75,9 +81,9 @@ const App: React.FC = () => {
         const data = await fetchStockDividendData(ticker);
         if (data) {
           setStockInfo(prev => ({ ...prev, [ticker]: data }));
-          setAnalysisResult(null); // Clear old analysis when portfolio changes
+          setAnalysisResult(null); 
         } else {
-          setError(`Could not find data for ticker: ${ticker}. Ensure your project has search enabled.`);
+          setError(`Could not find data for ticker: ${ticker}. Make sure the ticker is correct.`);
           setIsLoading(false);
           return;
         }
@@ -85,7 +91,7 @@ const App: React.FC = () => {
 
       const newHolding: StockHolding = {
         id: Math.random().toString(36).substr(2, 9),
-        ticker,
+        ticker: ticker.toUpperCase(),
         quantity,
         purchaseDate: date,
       };
@@ -93,9 +99,10 @@ const App: React.FC = () => {
       setHoldings(prev => [...prev, newHolding]);
       setAnalysisResult(null); 
     } catch (err: any) {
-      if (err.message?.includes("Requested entity was not found")) {
+      // If the request fails with 404/not found, it often means the API key/project is invalid or missing.
+      if (err.message?.includes("Requested entity was not found") || err.message?.includes("API key")) {
         setHasApiKey(false);
-        setError("API Key error or invalid project. Please re-select your key.");
+        setError("API Session expired or key invalid. Please re-select your key.");
       } else {
         setError("An error occurred while adding the stock. Please try again.");
       }
@@ -110,20 +117,21 @@ const App: React.FC = () => {
     try {
       const result = await analyzePortfolio(holdings, stockInfo);
       setAnalysisResult(result);
-    } catch (err) {
-      setError("Analysis failed. Please try again.");
+    } catch (err: any) {
+      if (err.message?.includes("Requested entity was not found")) {
+        setHasApiKey(false);
+      }
+      setError("Analysis failed. Please check your API key and try again.");
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  // Removes a holding from the portfolio.
   const removeHolding = (id: string) => {
     setHoldings(prev => prev.filter(h => h.id !== id));
     setAnalysisResult(null);
   };
 
-  // Calculate high-level portfolio metrics.
   const portfolioSummary = useMemo<PortfolioSummary>(() => {
     let totalValue = 0;
     let annualIncome = 0;
@@ -149,7 +157,6 @@ const App: React.FC = () => {
     };
   }, [holdings, stockInfo]);
 
-  // Generate 20-year compound growth projections.
   const projectionData = useMemo<ProjectionPoint[]>(() => {
     const points: ProjectionPoint[] = [];
     const initialInvestment = portfolioSummary.totalValue || 1;
@@ -200,6 +207,38 @@ const App: React.FC = () => {
     return points;
   }, [portfolioSummary, stockInfo]);
 
+  // Mandatory overlay if no API key is selected
+  if (isInitialCheckDone && !hasApiKey && window.aistudio) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+        <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl max-w-md w-full">
+          <div className="w-20 h-20 bg-indigo-600/20 rounded-full flex items-center justify-center mb-6 mx-auto">
+            <i className="fas fa-key text-3xl text-indigo-400"></i>
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-4">API Key Required</h1>
+          <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+            To access real-time stock data and AI analysis, you must select an API key from a paid Google Cloud project.
+          </p>
+          <button 
+            onClick={handleOpenKeyPicker}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 mb-4"
+          >
+            <i className="fas fa-plug"></i>
+            Select API Key
+          </button>
+          <a 
+            href="https://ai.google.dev/gemini-api/docs/billing" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-xs text-slate-500 hover:text-indigo-400 transition underline"
+          >
+            Learn about API billing requirements
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen pb-12 bg-slate-950 text-slate-50 font-sans">
       <nav className="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-50 shadow-md">
@@ -233,25 +272,15 @@ const App: React.FC = () => {
       </nav>
 
       <main className="container mx-auto px-4 py-8">
-        {!hasApiKey && (
-          <div className="bg-amber-500/10 border border-amber-500/50 p-4 rounded-xl mb-8 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <i className="fas fa-exclamation-triangle text-amber-500"></i>
-              <p className="text-amber-200 text-sm">Please select a Google AI Studio API key from a paid GCP project (ai.google.dev/gemini-api/docs/billing) to fetch real-time stock data.</p>
-            </div>
-            <button 
-              onClick={handleOpenKeyPicker}
-              className="bg-amber-500 text-slate-900 font-bold px-4 py-1 rounded text-xs"
-            >
-              Select Key
-            </button>
-          </div>
-        )}
-
         {error && (
-          <div className="bg-rose-500/10 border border-rose-500/50 p-4 rounded-xl mb-8 flex items-center gap-3 text-rose-300">
-            <i className="fas fa-times-circle"></i>
-            <p className="text-sm">{error}</p>
+          <div className="bg-rose-500/10 border border-rose-500/50 p-4 rounded-xl mb-8 flex items-center justify-between text-rose-300">
+            <div className="flex items-center gap-3">
+              <i className="fas fa-times-circle"></i>
+              <p className="text-sm">{error}</p>
+            </div>
+            <button onClick={() => setError(null)} className="text-rose-500 hover:text-rose-400">
+              <i className="fas fa-times"></i>
+            </button>
           </div>
         )}
 
