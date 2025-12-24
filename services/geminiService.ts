@@ -2,9 +2,17 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { DividendData, StockHolding } from "../types";
 
+const getAIInstance = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("MISSING_API_KEY");
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
 export const fetchStockDividendData = async (ticker: string): Promise<DividendData | null> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getAIInstance();
     
     const prompt = `
       Find current dividend information for the stock ticker: ${ticker}.
@@ -43,8 +51,6 @@ export const fetchStockDividendData = async (ticker: string): Promise<DividendDa
     const text = response.text;
     if (!text) throw new Error("Empty response from AI");
 
-    // Fix: Since googleSearch grounding output may not be in pure JSON format (might include citations), 
-    // we robustly extract the JSON part from the response text.
     let jsonStr = text.trim();
     const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -65,15 +71,16 @@ export const fetchStockDividendData = async (ticker: string): Promise<DividendDa
       lastUpdated: new Date().toISOString(),
       sources
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching stock data:", error);
-    return null;
+    // Rethrow to allow App.tsx to handle specific error types
+    throw error;
   }
 };
 
 export const analyzePortfolio = async (holdings: StockHolding[], stockInfo: Record<string, DividendData>): Promise<string | null> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getAIInstance();
     
     const portfolioSummary = holdings.map(h => {
       const info = stockInfo[h.ticker];
@@ -90,8 +97,6 @@ export const analyzePortfolio = async (holdings: StockHolding[], stockInfo: Reco
       2. Income Quality: Are there any potential "yield traps" or high-risk payout ratios?
       3. Growth Potential: How does the dividend growth rate look for the long term?
       4. Strategic Recommendation: What 1-2 types of assets should I consider adding to balance this?
-      
-      Keep the tone professional, objective, and data-driven. Use Markdown formatting for headings and bullet points.
     `;
 
     const response = await ai.models.generateContent({
@@ -105,6 +110,6 @@ export const analyzePortfolio = async (holdings: StockHolding[], stockInfo: Reco
     return response.text || "Could not generate analysis.";
   } catch (error) {
     console.error("Error analyzing portfolio:", error);
-    return null;
+    throw error;
   }
 };
