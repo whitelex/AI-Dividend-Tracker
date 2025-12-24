@@ -1,0 +1,5 @@
+{
+  "name": "DiviTrack Pro",
+  "description": "A sophisticated dividend tracker and projection tool that uses Google Search grounding to fetch real-time financial data and visualize long-term compounded growth.",
+  "requestFramePermissions": []
+}
