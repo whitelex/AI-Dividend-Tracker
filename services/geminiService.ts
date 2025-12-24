@@ -1,12 +1,9 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { DividendData } from "../types";
+import { DividendData, StockHolding } from "../types";
 
-// Function to fetch dividend data using Gemini with Google Search grounding.
 export const fetchStockDividendData = async (ticker: string): Promise<DividendData | null> => {
   try {
-    // Instantiate GoogleGenAI right before the API call to ensure it uses the latest API key from the environment.
-    // GUIDELINE: Must use a named parameter and obtain the key exclusively from process.env.API_KEY.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const prompt = `
@@ -43,15 +40,18 @@ export const fetchStockDividendData = async (ticker: string): Promise<DividendDa
       },
     });
 
-    // GUIDELINE: Access .text property directly, do not call as a method.
     const text = response.text;
-    if (!text) {
-      throw new Error("Empty response from AI");
+    if (!text) throw new Error("Empty response from AI");
+
+    // Fix: Since googleSearch grounding output may not be in pure JSON format (might include citations), 
+    // we robustly extract the JSON part from the response text.
+    let jsonStr = text.trim();
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[0];
     }
 
-    const data = JSON.parse(text.trim());
-    
-    // GUIDELINE: Extract website URLs from groundingChunks as required when using Google Search.
+    const data = JSON.parse(jsonStr);
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
       ?.map((chunk: any) => ({
         title: chunk.web?.title || "Source",
@@ -67,6 +67,44 @@ export const fetchStockDividendData = async (ticker: string): Promise<DividendDa
     };
   } catch (error) {
     console.error("Error fetching stock data:", error);
+    return null;
+  }
+};
+
+export const analyzePortfolio = async (holdings: StockHolding[], stockInfo: Record<string, DividendData>): Promise<string | null> => {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    const portfolioSummary = holdings.map(h => {
+      const info = stockInfo[h.ticker];
+      return info ? `- ${h.ticker} (${info.name}): Qty ${h.quantity}, Yield ${info.yield}%, Growth ${info.growthRate}%, Annual Income $${(h.quantity * info.annualDividend).toFixed(2)}` : `- ${h.ticker}: Data missing`;
+    }).join('\n');
+
+    const prompt = `
+      Act as a world-class dividend growth investor. Analyze the following portfolio:
+      
+      ${portfolioSummary}
+      
+      Provide a concise but deep analysis covering:
+      1. Sector Diversification: Based on these tickers, what sectors am I heavy/light on?
+      2. Income Quality: Are there any potential "yield traps" or high-risk payout ratios?
+      3. Growth Potential: How does the dividend growth rate look for the long term?
+      4. Strategic Recommendation: What 1-2 types of assets should I consider adding to balance this?
+      
+      Keep the tone professional, objective, and data-driven. Use Markdown formatting for headings and bullet points.
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-pro-preview",
+      contents: prompt,
+      config: {
+        thinkingConfig: { thinkingBudget: 4000 }
+      }
+    });
+
+    return response.text || "Could not generate analysis.";
+  } catch (error) {
+    console.error("Error analyzing portfolio:", error);
     return null;
   }
 };
