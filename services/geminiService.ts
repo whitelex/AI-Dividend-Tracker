@@ -2,10 +2,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { DividendData, StockHolding } from "../types";
 
-export const fetchStockDividendData = async (ticker: string): Promise<DividendData | null> => {
+export const fetchStockDividendData = async (ticker: string, apiKey: string): Promise<DividendData | null> => {
+  if (!apiKey) throw new Error("API Key is missing. Please check your settings.");
+  
   try {
-    // Create new instance right before call to ensure latest API key is used
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     
     const prompt = `
       Find current dividend information for the stock ticker: ${ticker}.
@@ -70,9 +71,11 @@ export const fetchStockDividendData = async (ticker: string): Promise<DividendDa
   }
 };
 
-export const analyzePortfolio = async (holdings: StockHolding[], stockInfo: Record<string, DividendData>): Promise<string | null> => {
+export const analyzePortfolio = async (holdings: StockHolding[], stockInfo: Record<string, DividendData>, apiKey: string): Promise<string | null> => {
+  if (!apiKey) throw new Error("API Key is missing. Please check your settings.");
+
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     
     const portfolioSummary = holdings.map(h => {
       const info = stockInfo[h.ticker];

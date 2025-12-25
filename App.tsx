@@ -7,67 +7,68 @@ import Dashboard from './components/Dashboard';
 import ProjectionChart from './components/ProjectionChart';
 import PortfolioAnalysis from './components/PortfolioAnalysis';
 
-declare global {
-  interface AIStudio {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  }
-  interface Window {
-    aistudio?: AIStudio;
-  }
-}
-
 const App: React.FC = () => {
+  // Core Portfolio State
   const [holdings, setHoldings] = useState<StockHolding[]>([]);
   const [stockInfo, setStockInfo] = useState<Record<string, DividendData>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState<boolean>(false);
 
-  // Check connection status silently
+  // API Key & Settings State
+  const [apiKey, setApiKey] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [tempKey, setTempKey] = useState('');
+
+  // Initial Data & Key Load
   useEffect(() => {
-    const checkStatus = async () => {
-      if (window.aistudio?.hasSelectedApiKey) {
-        const hasKey = await window.aistudio.hasSelectedApiKey();
-        setIsConnected(hasKey);
-      } else {
-        setIsConnected(!!process.env.API_KEY);
-      }
-    };
-    checkStatus();
-  }, []);
-
-  const handleConnect = async () => {
-    if (window.aistudio?.openSelectKey) {
-      await window.aistudio.openSelectKey();
-      setIsConnected(true);
-      setError(null);
+    const storedKey = localStorage.getItem('gemini_api_key');
+    if (storedKey) {
+      setApiKey(storedKey);
     } else {
-      alert("API Key injection is handled by the platform. Ensure you are in a supported environment.");
+      setShowSettings(true); // Prompt for key if missing
     }
-  };
 
-  // Persistent storage for multi-user experience (local to their browser)
-  useEffect(() => {
-    const saved = localStorage.getItem('divitrack_holdings');
-    const savedInfo = localStorage.getItem('divitrack_info');
-    if (saved) setHoldings(JSON.parse(saved));
+    const savedHoldings = localStorage.getItem('divi_holdings');
+    const savedInfo = localStorage.getItem('divi_stock_info');
+    if (savedHoldings) setHoldings(JSON.parse(savedHoldings));
     if (savedInfo) setStockInfo(JSON.parse(savedInfo));
   }, []);
 
+  // Persistence
   useEffect(() => {
-    localStorage.setItem('divitrack_holdings', JSON.stringify(holdings));
-    localStorage.setItem('divitrack_info', JSON.stringify(stockInfo));
+    localStorage.setItem('divi_holdings', JSON.stringify(holdings));
+    localStorage.setItem('divi_stock_info', JSON.stringify(stockInfo));
   }, [holdings, stockInfo]);
 
+  const handleSaveKey = () => {
+    if (tempKey.trim()) {
+      localStorage.setItem('gemini_api_key', tempKey.trim());
+      setApiKey(tempKey.trim());
+      setShowSettings(false);
+      setTempKey('');
+      setError(null);
+    }
+  };
+
+  const handleClearKey = () => {
+    localStorage.removeItem('gemini_api_key');
+    setApiKey('');
+    setTempKey('');
+  };
+
   const addHolding = async (ticker: string, quantity: number, date: string) => {
+    if (!apiKey) {
+      setShowSettings(true);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
       if (!stockInfo[ticker]) {
-        const data = await fetchStockDividendData(ticker);
+        const data = await fetchStockDividendData(ticker, apiKey);
         if (data) setStockInfo(prev => ({ ...prev, [ticker]: data }));
       }
       const newHolding: StockHolding = {
@@ -78,11 +79,11 @@ const App: React.FC = () => {
       };
       setHoldings(prev => [...prev, newHolding]);
     } catch (err: any) {
-      if (err.message?.includes("API key") || err.message?.includes("401")) {
-        setError("API Key required. Please click 'Connect Key' to enable market data.");
-        setIsConnected(false);
+      if (err.message?.includes("API key") || err.message?.includes("401") || err.message?.includes("403")) {
+        setError("Invalid API Key or project permissions. Check settings.");
+        setShowSettings(true);
       } else {
-        setError(`Could not find data for ${ticker}. Please check the symbol.`);
+        setError(`Could not retrieve data for ${ticker}.`);
       }
     } finally {
       setIsLoading(false);
@@ -90,14 +91,15 @@ const App: React.FC = () => {
   };
 
   const runAnalysis = async () => {
-    if (holdings.length === 0) return;
+    if (holdings.length === 0 || !apiKey) return;
     setIsAnalyzing(true);
     setError(null);
     try {
-      const result = await analyzePortfolio(holdings, stockInfo);
+      const result = await analyzePortfolio(holdings, stockInfo, apiKey);
       setAnalysisResult(result);
     } catch (err: any) {
-      setError("AI Engine offline. Verify your API connection.");
+      setError("AI analysis failed. Please verify your API key.");
+      if (err.message?.includes("401")) setShowSettings(true);
     } finally {
       setIsAnalyzing(false);
     }
@@ -150,39 +152,42 @@ const App: React.FC = () => {
       <nav className="bg-slate-900/40 backdrop-blur-xl border-b border-white/5 p-4 sticky top-0 z-[100]">
         <div className="container mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-600/20">
-              <i className="fas fa-chart-line text-white text-sm"></i>
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-600/30">
+              <i className="fas fa-hand-holding-dollar text-white text-lg"></i>
             </div>
             <div>
-              <h1 className="text-xs font-black uppercase tracking-[0.2em]">
+              <h1 className="text-sm font-black uppercase tracking-[0.2em]">
                 DiviTrack <span className="text-indigo-500">Pro</span>
               </h1>
               <div className="flex items-center gap-1.5 -mt-0.5">
-                <div className={`w-1 h-1 rounded-full ${isConnected ? 'bg-emerald-500 shadow-[0_0_5px_#10b981]' : 'bg-slate-600'}`}></div>
-                <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
-                  {isConnected ? 'Market Ready' : 'Connection Required'}
+                <div className={`w-1.5 h-1.5 rounded-full ${apiKey ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-rose-500 animate-pulse'}`}></div>
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+                  {apiKey ? 'Live Analysis' : 'Action Required'}
                 </span>
               </div>
             </div>
           </div>
           
           <button 
-            onClick={handleConnect}
-            className={`text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-lg transition-all border ${isConnected ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-indigo-600 border-indigo-500 text-white shadow-lg'} active:scale-95`}
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest px-5 py-2.5 rounded-xl transition-all border bg-slate-800/50 border-slate-700 text-slate-300 hover:border-indigo-500/50 active:scale-95"
           >
-            {isConnected ? 'Change API Key' : 'Connect Key'}
+            <i className="fas fa-cog"></i>
+            Settings
           </button>
         </div>
       </nav>
 
       <main className="container mx-auto px-4 py-8">
         {error && (
-          <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl mb-8 flex items-center justify-between text-rose-400 animate-in slide-in-from-top-2">
-            <div className="flex items-center gap-3">
-              <i className="fas fa-shield-virus text-xs"></i>
-              <p className="text-[10px] font-black uppercase tracking-tight">{error}</p>
+          <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl mb-8 flex items-center justify-between text-rose-300 animate-in slide-in-from-top-4 shadow-xl">
+            <div className="flex items-center gap-4">
+              <i className="fas fa-circle-exclamation text-lg"></i>
+              <p className="text-xs font-bold uppercase tracking-tight">{error}</p>
             </div>
-            <button onClick={() => setError(null)} className="opacity-50 hover:opacity-100 px-2 text-sm">&times;</button>
+            <button onClick={() => setError(null)} className="text-rose-500/50 hover:text-rose-500 p-2">
+              <i className="fas fa-times"></i>
+            </button>
           </div>
         )}
 
@@ -193,28 +198,30 @@ const App: React.FC = () => {
             <StockForm onAdd={addHolding} isLoading={isLoading} />
             <PortfolioAnalysis onAnalyze={runAnalysis} analysis={analysisResult} isLoading={isAnalyzing} hasData={holdings.length > 0} />
             
-            <div className="bg-slate-900/40 p-6 rounded-3xl border border-white/5 shadow-xl">
+            <div className="bg-slate-900/40 p-6 rounded-[2rem] border border-white/5 shadow-2xl overflow-hidden">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Holdings</h3>
-                <span className="text-[9px] font-black text-slate-400">{holdings.length} Assets</span>
+                <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Holdings</h3>
+                <span className="text-[9px] font-black bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full border border-indigo-500/20">
+                  {holdings.length} Assets
+                </span>
               </div>
-              <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+              <div className="space-y-3 max-h-[440px] overflow-y-auto custom-scrollbar pr-1">
                 {holdings.map(h => (
-                  <div key={h.id} className="bg-slate-800/40 p-3 rounded-xl border border-white/5 flex items-center justify-between group">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center font-black text-indigo-400 text-[10px]">
+                  <div key={h.id} className="bg-slate-800/40 p-4 rounded-2xl border border-white/5 flex items-center justify-between group hover:border-indigo-500/30 transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center font-black text-indigo-400 text-xs border border-white/5">
                         {h.ticker.substring(0, 3)}
                       </div>
                       <div>
-                        <span className="font-black text-white text-xs block">{h.ticker}</span>
-                        <span className="text-[9px] text-slate-500 font-bold uppercase">{h.quantity} Shares</span>
+                        <span className="font-black text-white text-sm tracking-tighter block">{h.ticker}</span>
+                        <span className="text-[10px] text-slate-500 font-bold uppercase">{h.quantity} Shares</span>
                       </div>
                     </div>
                     <button 
                       onClick={() => setHoldings(prev => prev.filter(item => item.id !== h.id))}
-                      className="text-slate-700 hover:text-rose-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="text-slate-700 hover:text-rose-500 p-2 transition-all opacity-0 group-hover:opacity-100"
                     >
-                      <i className="fas fa-trash-alt text-[10px]"></i>
+                      <i className="fas fa-trash-alt text-xs"></i>
                     </button>
                   </div>
                 ))}
@@ -224,17 +231,100 @@ const App: React.FC = () => {
           
           <div className="lg:col-span-2 space-y-6">
             <ProjectionChart data={projectionData} />
-            <div className="bg-slate-900/20 p-4 rounded-2xl border border-white/5 flex flex-wrap gap-2">
-              <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest mr-2 py-1">Sources:</span>
-              {(Object.values(stockInfo) as DividendData[]).flatMap(info => info.sources).slice(0, 8).map((s, i) => (
-                <a key={i} href={s.uri} target="_blank" rel="noopener noreferrer" className="text-[8px] font-bold text-indigo-400/60 hover:text-indigo-300 hover:bg-indigo-500/10 px-2 py-1 rounded transition-colors uppercase border border-indigo-500/10">
-                  {s.title}
-                </a>
-              ))}
+            <div className="bg-slate-900/20 p-6 rounded-[2.5rem] border border-white/5">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-1.5 h-6 bg-indigo-600 rounded-full"></div>
+                <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Market Research Citations</h4>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {(Object.values(stockInfo) as DividendData[]).flatMap(info => info.sources).slice(0, 10).map((s, i) => (
+                  <a 
+                    key={i} 
+                    href={s.uri} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="group text-[10px] text-indigo-400/80 hover:text-indigo-300 hover:bg-indigo-500/10 px-4 py-2.5 rounded-xl border border-indigo-500/10 transition-all flex items-center gap-2 bg-slate-900/80"
+                  >
+                    <i className="fas fa-link text-[8px] opacity-40"></i>
+                    <span className="max-w-[160px] truncate font-bold uppercase tracking-tight">{s.title}</span>
+                  </a>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </main>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] shadow-2xl max-w-md w-full p-8 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 to-emerald-500"></div>
+            
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-black text-white flex items-center gap-3">
+                <i className="fas fa-key text-indigo-500"></i>
+                API Settings
+              </h2>
+              {apiKey && (
+                <button onClick={() => setShowSettings(false)} className="text-slate-500 hover:text-white transition">
+                  <i className="fas fa-times text-xl"></i>
+                </button>
+              )}
+            </div>
+
+            <p className="text-slate-400 text-sm mb-8 leading-relaxed">
+              To fetch real-time financial data, enter your Google Gemini API key. It is stored locally in your browser and never sent to a backend.
+            </p>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 px-1">Gemini API Key</label>
+                <div className="relative">
+                  <input 
+                    type="password" 
+                    value={tempKey}
+                    onChange={(e) => setTempKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-700"
+                  />
+                </div>
+              </div>
+              
+              <div className="text-[10px] text-slate-500 font-bold px-1">
+                Need a key? <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Get one for free at Google AI Studio</a>.
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                {apiKey && (
+                  <button 
+                    onClick={() => setShowSettings(false)}
+                    className="flex-1 px-4 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button 
+                  onClick={handleSaveKey}
+                  disabled={!tempKey.trim()}
+                  className="flex-1 px-4 py-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-xl shadow-indigo-600/20"
+                >
+                  Save Connection
+                </button>
+              </div>
+              
+              {apiKey && (
+                <div className="border-t border-slate-800 mt-4 pt-6 text-center">
+                  <button onClick={handleClearKey} className="text-[10px] text-rose-500 hover:text-rose-400 font-black uppercase tracking-widest transition group">
+                    <i className="fas fa-trash-alt mr-2 opacity-50 group-hover:opacity-100"></i>
+                    Wipe Stored Key
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
