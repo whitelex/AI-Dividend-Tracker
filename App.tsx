@@ -14,7 +14,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{message: string, type: 'error' | 'warning'} | null>(null);
 
   // API Key & Settings State
   const [apiKey, setApiKey] = useState('');
@@ -79,14 +79,18 @@ const App: React.FC = () => {
       };
       setHoldings(prev => [...prev, newHolding]);
     } catch (err: any) {
-      console.error(err);
-      if (err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
-        setError("Rate limit exceeded (Quota Exhausted). Please wait a minute or check your daily RPD limit in Google AI Studio.");
-      } else if (err.message?.includes("401") || err.message?.includes("403")) {
-        setError("Invalid API Key. Please update your connection in settings.");
+      console.error("App Error:", err);
+      const msg = err.message || "";
+      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+        setError({
+          message: "API Limit Reached. Your account has a 5 RPM limit. Please wait 30-60 seconds before adding more stocks.",
+          type: 'warning'
+        });
+      } else if (msg.includes("401") || msg.includes("403")) {
+        setError({ message: "Invalid API Key. Please update your settings.", type: 'error' });
         setShowSettings(true);
       } else {
-        setError(`Could not retrieve data for ${ticker}. Check the ticker or try again later.`);
+        setError({ message: `Could not retrieve data for ${ticker}. Check symbol and try again.`, type: 'error' });
       }
     } finally {
       setIsLoading(false);
@@ -101,10 +105,11 @@ const App: React.FC = () => {
       const result = await analyzePortfolio(holdings, stockInfo, apiKey);
       setAnalysisResult(result);
     } catch (err: any) {
-      if (err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
-        setError("AI Engine busy (Rate Limit). Please try again in 60 seconds.");
+      const msg = err.message || "";
+      if (msg.includes("429")) {
+        setError({ message: "Rate limit hit. Wait a minute and try again.", type: 'warning' });
       } else {
-        setError("AI analysis failed. Please verify your API key settings.");
+        setError({ message: "Analysis failed. Verify your key and portfolio data.", type: 'error' });
       }
     } finally {
       setIsAnalyzing(false);
@@ -186,12 +191,12 @@ const App: React.FC = () => {
 
       <main className="container mx-auto px-4 py-8">
         {error && (
-          <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl mb-8 flex items-center justify-between text-rose-300 animate-in slide-in-from-top-4 shadow-xl">
+          <div className={`${error.type === 'warning' ? 'bg-amber-500/10 border-amber-500/20 text-amber-300' : 'bg-rose-500/10 border-rose-500/20 text-rose-300'} border p-4 rounded-2xl mb-8 flex items-center justify-between animate-in slide-in-from-top-4 shadow-xl`}>
             <div className="flex items-center gap-4">
-              <i className="fas fa-circle-exclamation text-lg"></i>
-              <p className="text-xs font-bold uppercase tracking-tight">{error}</p>
+              <i className={`fas ${error.type === 'warning' ? 'fa-hourglass-half' : 'fa-circle-exclamation'} text-lg`}></i>
+              <p className="text-xs font-bold uppercase tracking-tight">{error.message}</p>
             </div>
-            <button onClick={() => setError(null)} className="text-rose-500/50 hover:text-rose-500 p-2">
+            <button onClick={() => setError(null)} className="opacity-50 hover:opacity-100 p-2">
               <i className="fas fa-times"></i>
             </button>
           </div>
@@ -231,12 +236,6 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 ))}
-                {holdings.length === 0 && (
-                  <div className="py-12 text-center opacity-20">
-                    <i className="fas fa-layer-group text-3xl mb-2"></i>
-                    <p className="text-[9px] font-black uppercase tracking-widest">No assets tracked</p>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -286,21 +285,19 @@ const App: React.FC = () => {
             </div>
 
             <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-              To fetch real-time financial data, enter your Google Gemini API key. It is stored locally in your browser and never sent to a backend.
+              Enter your Google Gemini API key. It is stored locally in your browser.
             </p>
 
             <div className="space-y-6">
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 px-1">Gemini API Key</label>
-                <div className="relative">
-                  <input 
-                    type="password" 
-                    value={tempKey}
-                    onChange={(e) => setTempKey(e.target.value)}
-                    placeholder="AIzaSy..."
-                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-700"
-                  />
-                </div>
+                <input 
+                  type="password" 
+                  value={tempKey}
+                  onChange={(e) => setTempKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-700"
+                />
               </div>
               
               <div className="text-[10px] text-slate-500 font-bold px-1">
@@ -324,15 +321,6 @@ const App: React.FC = () => {
                   Save Connection
                 </button>
               </div>
-              
-              {apiKey && (
-                <div className="border-t border-slate-800 mt-4 pt-6 text-center">
-                  <button onClick={handleClearKey} className="text-[10px] text-rose-500 hover:text-rose-400 font-black uppercase tracking-widest transition group">
-                    <i className="fas fa-trash-alt mr-2 opacity-50 group-hover:opacity-100"></i>
-                    Wipe Stored Key
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </div>
