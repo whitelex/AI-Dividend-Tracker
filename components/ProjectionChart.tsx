@@ -73,7 +73,7 @@ const ProjectionChart: React.FC<ProjectionChartProps> = ({ data }) => {
   };
 
   return (
-    <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 h-[500px] shadow-2xl relative overflow-hidden">
+    <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 min-h-[500px] flex flex-col shadow-2xl relative overflow-hidden">
       {/* Decorative gradient blur */}
       <div className="absolute -top-24 -right-24 w-48 h-48 bg-indigo-500/10 blur-[80px] rounded-full pointer-events-none"></div>
       
@@ -98,106 +98,100 @@ const ProjectionChart: React.FC<ProjectionChartProps> = ({ data }) => {
         </div>
       </div>
 
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 40 }}>
-          <defs>
-            <linearGradient id="colorScenarios" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
-              <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-            </linearGradient>
-            <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-              <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} opacity={0.5} />
-          <XAxis 
-            dataKey="year" 
-            stroke="#64748b" 
-            fontSize={11} 
-            tickLine={false} 
-            axisLine={false} 
-            dy={10}
-            label={{ value: 'YEARS PROJECTION', position: 'bottom', offset: 0, fontSize: 10, fontWeight: 'bold', fill: '#475569' }}
-          />
-          
-          <YAxis 
-            yAxisId="left"
-            stroke="#64748b" 
-            fontSize={11} 
-            tickFormatter={formatYAxisCurrency} 
-            tickLine={false} 
-            axisLine={false} 
-          />
-          
-          <YAxis 
-            yAxisId="right"
-            orientation="right"
-            stroke="#fbbf24" 
-            fontSize={11} 
-            tickFormatter={formatYAxisPercent} 
-            tickLine={false} 
-            axisLine={false} 
-          />
+      <div className="flex-grow min-h-[350px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 40 }}>
+            <defs>
+              <linearGradient id="colorScenarios" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
+                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} opacity={0.5} />
+            <XAxis 
+              dataKey="year" 
+              stroke="#64748b" 
+              fontSize={11} 
+              tickLine={false} 
+              axisLine={false} 
+              dy={10}
+              label={{ value: 'YEARS PROJECTION', position: 'bottom', offset: 0, fontSize: 10, fontWeight: 'bold', fill: '#475569' }}
+            />
+            
+            <YAxis 
+              yAxisId="left"
+              stroke="#64748b" 
+              fontSize={11} 
+              tickFormatter={formatYAxisCurrency} 
+              tickLine={false} 
+              axisLine={false} 
+            />
+            
+            <YAxis 
+              yAxisId="right"
+              orientation="right"
+              stroke="#fbbf24" 
+              fontSize={11} 
+              tickFormatter={formatYAxisPercent} 
+              tickLine={false} 
+              axisLine={false} 
+            />
 
-          <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#475569', strokeWidth: 1 }} />
-          <Legend verticalAlign="top" height={36} iconType="circle" />
-          
-          {/* Shaded Area for Bull/Bear range */}
-          <Area
-            yAxisId="left"
-            name="Volatility Range (Bear-Bull)"
-            dataKey="bullBalance"
-            stroke="none"
-            fill="#6366f1"
-            fillOpacity={0.05}
-            activeDot={false}
-          />
-          <Area
-            yAxisId="left"
-            dataKey="bearBalance"
-            stroke="none"
-            fill="#0f172a"
-            fillOpacity={1}
-            activeDot={false}
-          />
+            <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#475569', strokeWidth: 1 }} />
+            <Legend verticalAlign="top" height={36} iconType="circle" />
+            
+            <Area
+              yAxisId="left"
+              name="Volatility Range (Bear-Bull)"
+              dataKey="bullBalance"
+              stroke="none"
+              fill="#6366f1"
+              fillOpacity={0.05}
+              activeDot={false}
+            />
+            <Area
+              yAxisId="left"
+              dataKey="bearBalance"
+              stroke="none"
+              fill="#0f172a"
+              fillOpacity={1}
+              activeDot={false}
+            />
 
-          {/* Base Case Line */}
-          <Line
-            yAxisId="left"
-            name="Portfolio Balance (Base)"
-            type="monotone"
-            dataKey="balance"
-            stroke="#6366f1"
-            strokeWidth={4}
-            dot={false}
-            activeDot={{ r: 6, fill: '#6366f1', stroke: '#1e293b', strokeWidth: 2 }}
-          />
+            <Line
+              yAxisId="left"
+              name="Portfolio Balance (Base)"
+              type="monotone"
+              dataKey="balance"
+              stroke="#6366f1"
+              strokeWidth={4}
+              dot={false}
+              activeDot={{ r: 6, fill: '#6366f1', stroke: '#1e293b', strokeWidth: 2 }}
+            />
 
-          {/* Income Line */}
-          <Line
-            yAxisId="left"
-            name="Annual Income"
-            type="monotone"
-            dataKey="annualIncome"
-            stroke="#10b981"
-            strokeWidth={2}
-            dot={false}
-          />
+            <Line
+              yAxisId="left"
+              name="Annual Income"
+              type="monotone"
+              dataKey="annualIncome"
+              stroke="#10b981"
+              strokeWidth={2}
+              dot={false}
+            />
 
-          {/* YOC Line */}
-          <Line
-            yAxisId="right"
-            name="Yield on Cost"
-            type="monotone"
-            dataKey="yoc"
-            stroke="#fbbf24"
-            strokeWidth={2}
-            strokeDasharray="4 4"
-            dot={false}
-          />
-        </ComposedChart>
-      </ResponsiveContainer>
+            <Line
+              yAxisId="right"
+              name="Yield on Cost"
+              type="monotone"
+              dataKey="yoc"
+              stroke="#fbbf24"
+              strokeWidth={2}
+              strokeDasharray="4 4"
+              dot={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 };

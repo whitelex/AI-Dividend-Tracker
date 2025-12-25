@@ -27,7 +27,7 @@ const App: React.FC = () => {
     if (storedKey) {
       setApiKey(storedKey);
     } else {
-      setShowSettings(true); // Prompt for key if missing
+      setShowSettings(true);
     }
 
     const savedHoldings = localStorage.getItem('divi_holdings');
@@ -79,11 +79,14 @@ const App: React.FC = () => {
       };
       setHoldings(prev => [...prev, newHolding]);
     } catch (err: any) {
-      if (err.message?.includes("API key") || err.message?.includes("401") || err.message?.includes("403")) {
-        setError("Invalid API Key or project permissions. Check settings.");
+      console.error(err);
+      if (err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
+        setError("Rate limit exceeded (Quota Exhausted). Please wait a minute or check your daily RPD limit in Google AI Studio.");
+      } else if (err.message?.includes("401") || err.message?.includes("403")) {
+        setError("Invalid API Key. Please update your connection in settings.");
         setShowSettings(true);
       } else {
-        setError(`Could not retrieve data for ${ticker}.`);
+        setError(`Could not retrieve data for ${ticker}. Check the ticker or try again later.`);
       }
     } finally {
       setIsLoading(false);
@@ -98,8 +101,11 @@ const App: React.FC = () => {
       const result = await analyzePortfolio(holdings, stockInfo, apiKey);
       setAnalysisResult(result);
     } catch (err: any) {
-      setError("AI analysis failed. Please verify your API key.");
-      if (err.message?.includes("401")) setShowSettings(true);
+      if (err.message?.includes("429") || err.message?.includes("RESOURCE_EXHAUSTED")) {
+        setError("AI Engine busy (Rate Limit). Please try again in 60 seconds.");
+      } else {
+        setError("AI analysis failed. Please verify your API key settings.");
+      }
     } finally {
       setIsAnalyzing(false);
     }
@@ -225,6 +231,12 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 ))}
+                {holdings.length === 0 && (
+                  <div className="py-12 text-center opacity-20">
+                    <i className="fas fa-layer-group text-3xl mb-2"></i>
+                    <p className="text-[9px] font-black uppercase tracking-widest">No assets tracked</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -292,7 +304,7 @@ const App: React.FC = () => {
               </div>
               
               <div className="text-[10px] text-slate-500 font-bold px-1">
-                Need a key? <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Get one for free at Google AI Studio</a>.
+                Don't have a key? <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Get one for free at Google AI Studio</a>.
               </div>
 
               <div className="flex gap-3 pt-4">

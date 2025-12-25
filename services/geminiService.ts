@@ -2,10 +2,25 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { DividendData, StockHolding } from "../types";
 
+// Helper for exponential backoff retries
+const withRetry = async <T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> => {
+  try {
+    return await fn();
+  } catch (error: any) {
+    const isRateLimit = error.message?.includes("429") || error.message?.includes("RESOURCE_EXHAUSTED");
+    if (isRateLimit && retries > 0) {
+      console.warn(`Rate limit hit. Retrying in ${delay}ms... (${retries} attempts left)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return withRetry(fn, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+};
+
 export const fetchStockDividendData = async (ticker: string, apiKey: string): Promise<DividendData | null> => {
   if (!apiKey) throw new Error("API Key is missing. Please check your settings.");
   
-  try {
+  return withRetry(async () => {
     const ai = new GoogleGenAI({ apiKey });
     
     const prompt = `
@@ -65,16 +80,13 @@ export const fetchStockDividendData = async (ticker: string, apiKey: string): Pr
       lastUpdated: new Date().toISOString(),
       sources
     };
-  } catch (error: any) {
-    console.error("Error fetching stock data:", error);
-    throw error;
-  }
+  });
 };
 
 export const analyzePortfolio = async (holdings: StockHolding[], stockInfo: Record<string, DividendData>, apiKey: string): Promise<string | null> => {
   if (!apiKey) throw new Error("API Key is missing. Please check your settings.");
 
-  try {
+  return withRetry(async () => {
     const ai = new GoogleGenAI({ apiKey });
     
     const portfolioSummary = holdings.map(h => {
@@ -103,8 +115,5 @@ export const analyzePortfolio = async (holdings: StockHolding[], stockInfo: Reco
     });
 
     return response.text || "Could not generate analysis.";
-  } catch (error) {
-    console.error("Error analyzing portfolio:", error);
-    throw error;
-  }
+  });
 };
