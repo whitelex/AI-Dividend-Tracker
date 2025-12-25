@@ -67,16 +67,24 @@ const App: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      if (!stockInfo[ticker]) {
+      let currentInfo = { ...stockInfo };
+      if (!currentInfo[ticker]) {
         const data = await fetchStockDividendData(ticker, apiKey);
-        if (data) setStockInfo(prev => ({ ...prev, [ticker]: data }));
+        if (data) {
+          currentInfo[ticker] = data;
+          setStockInfo(currentInfo);
+        } else {
+          throw new Error("No data returned for ticker");
+        }
       }
+      
       const newHolding: StockHolding = {
         id: Math.random().toString(36).substr(2, 9),
         ticker: ticker.toUpperCase(),
         quantity,
         purchaseDate: date,
       };
+      
       setHoldings(prev => [...prev, newHolding]);
     } catch (err: any) {
       console.error("App Error:", err);
@@ -134,7 +142,19 @@ const App: React.FC = () => {
     const points: ProjectionPoint[] = [];
     const initialInvestment = portfolioSummary.totalValue || 1;
     const stocks = Object.values(stockInfo) as DividendData[];
-    const avgGrowth = stocks.length > 0 ? stocks.reduce((acc, curr) => acc + (curr.growthRate || 0), 0) / stocks.length / 100 : 0.07;
+    
+    // Calculate average growth rate of the portfolio
+    const totalWeight = portfolioSummary.totalValue || 1;
+    let avgGrowth = 0;
+    holdings.forEach(h => {
+        const info = stockInfo[h.ticker];
+        if (info) {
+            const weight = (h.quantity * info.currentPrice) / totalWeight;
+            avgGrowth += (info.growthRate || 0) * weight;
+        }
+    });
+    
+    avgGrowth = stocks.length > 0 ? avgGrowth / 100 : 0.07;
     const initialAvgPrice = portfolioSummary.totalValue / (portfolioSummary.totalShares || 1);
     const initialDivPerShare = portfolioSummary.annualIncome / (portfolioSummary.totalShares || 1);
 
@@ -151,12 +171,14 @@ const App: React.FC = () => {
         shares: Number(shares.toFixed(2))
       });
       cumulativeDiv += income;
+      // Reinvest dividends
       shares += priceBase > 0 ? (income / priceBase) : 0;
+      // Grow dividends and stock price
       divPerShare *= (1 + avgGrowth);
       priceBase *= 1.05; priceBear *= 1.01; priceBull *= 1.09;
     }
     return points;
-  }, [portfolioSummary, stockInfo]);
+  }, [portfolioSummary, stockInfo, holdings]);
 
   return (
     <div className="min-h-screen pb-12 bg-slate-950 text-slate-50 font-sans selection:bg-indigo-500/30">
@@ -236,6 +258,12 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 ))}
+                {holdings.length === 0 && (
+                  <div className="py-12 text-center opacity-20">
+                    <i className="fas fa-layer-group text-3xl mb-2"></i>
+                    <p className="text-[9px] font-black uppercase tracking-widest">No assets tracked</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -285,19 +313,21 @@ const App: React.FC = () => {
             </div>
 
             <p className="text-slate-400 text-sm mb-8 leading-relaxed">
-              Enter your Google Gemini API key. It is stored locally in your browser.
+              To fetch real-time financial data, enter your Google Gemini API key. It is stored locally in your browser and never sent to a backend.
             </p>
 
             <div className="space-y-6">
               <div>
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 px-1">Gemini API Key</label>
-                <input 
-                  type="password" 
-                  value={tempKey}
-                  onChange={(e) => setTempKey(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-700"
-                />
+                <div className="relative">
+                  <input 
+                    type="password" 
+                    value={tempKey}
+                    onChange={(e) => setTempKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-5 py-4 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder:text-slate-700"
+                  />
+                </div>
               </div>
               
               <div className="text-[10px] text-slate-500 font-bold px-1">
@@ -321,6 +351,15 @@ const App: React.FC = () => {
                   Save Connection
                 </button>
               </div>
+              
+              {apiKey && (
+                <div className="border-t border-slate-800 mt-4 pt-6 text-center">
+                  <button onClick={handleClearKey} className="text-[10px] text-rose-500 hover:text-rose-400 font-black uppercase tracking-widest transition group">
+                    <i className="fas fa-trash-alt mr-2 opacity-50 group-hover:opacity-100"></i>
+                    Wipe Stored Key
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

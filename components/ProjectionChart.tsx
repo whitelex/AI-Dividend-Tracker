@@ -28,41 +28,43 @@ const ProjectionChart: React.FC<ProjectionChartProps> = ({ data }) => {
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      const p = payload[0].payload as ProjectionPoint;
+      const p = payload[0]?.payload as ProjectionPoint;
+      if (!p) return null;
+      
       return (
-        <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-4 rounded-xl shadow-2xl text-sm min-w-[260px]">
+        <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 p-4 rounded-xl shadow-2xl text-sm min-w-[260px] z-50">
           <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-3">
             <p className="font-bold text-indigo-300">Year {label} Projection</p>
             <span className="text-[10px] font-bold text-slate-500 bg-slate-800 px-2 py-0.5 rounded uppercase tracking-tighter">
-              {p.shares.toLocaleString()} Shares
+              {p.shares?.toLocaleString() || 0} Shares
             </span>
           </div>
           
           <div className="space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-slate-400 text-xs">Portfolio Value (Base):</span>
-              <span className="font-mono text-white font-bold">${p.balance.toLocaleString()}</span>
+              <span className="font-mono text-white font-bold">${p.balance?.toLocaleString() || 0}</span>
             </div>
             
             <div className="grid grid-cols-2 gap-2 pt-1">
               <div className="bg-rose-500/10 p-1.5 rounded border border-rose-500/20 text-center">
                 <p className="text-[9px] uppercase text-rose-400 font-bold mb-0.5">Bear Case</p>
-                <p className="text-xs font-mono text-rose-200">${p.bearBalance.toLocaleString()}</p>
+                <p className="text-xs font-mono text-rose-200">${p.bearBalance?.toLocaleString() || 0}</p>
               </div>
               <div className="bg-emerald-500/10 p-1.5 rounded border border-emerald-500/20 text-center">
                 <p className="text-[9px] uppercase text-emerald-400 font-bold mb-0.5">Bull Case</p>
-                <p className="text-xs font-mono text-emerald-200">${p.bullBalance.toLocaleString()}</p>
+                <p className="text-xs font-mono text-emerald-200">${p.bullBalance?.toLocaleString() || 0}</p>
               </div>
             </div>
 
             <div className="pt-2 mt-2 border-t border-slate-800 space-y-1.5">
               <div className="flex justify-between items-center">
                 <span className="text-emerald-400 text-xs">Annual Income:</span>
-                <span className="font-mono text-white">${p.annualIncome.toLocaleString()}</span>
+                <span className="font-mono text-white">${p.annualIncome?.toLocaleString() || 0}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-amber-400 text-xs font-bold">Yield on Cost:</span>
-                <span className="font-mono text-amber-300 font-bold">{p.yoc.toFixed(2)}%</span>
+                <span className="font-mono text-amber-300 font-bold">{p.yoc?.toFixed(2) || '0.00'}%</span>
               </div>
             </div>
           </div>
@@ -73,7 +75,7 @@ const ProjectionChart: React.FC<ProjectionChartProps> = ({ data }) => {
   };
 
   return (
-    <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 min-h-[500px] flex flex-col shadow-2xl relative overflow-hidden">
+    <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl relative overflow-hidden w-full">
       {/* Decorative gradient blur */}
       <div className="absolute -top-24 -right-24 w-48 h-48 bg-indigo-500/10 blur-[80px] rounded-full pointer-events-none"></div>
       
@@ -98,7 +100,7 @@ const ProjectionChart: React.FC<ProjectionChartProps> = ({ data }) => {
         </div>
       </div>
 
-      <div className="flex-grow min-h-[350px]">
+      <div className="h-[400px] w-full min-h-[400px]">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 40 }}>
             <defs>
@@ -115,7 +117,6 @@ const ProjectionChart: React.FC<ProjectionChartProps> = ({ data }) => {
               tickLine={false} 
               axisLine={false} 
               dy={10}
-              label={{ value: 'YEARS PROJECTION', position: 'bottom', offset: 0, fontSize: 10, fontWeight: 'bold', fill: '#475569' }}
             />
             
             <YAxis 
@@ -138,7 +139,7 @@ const ProjectionChart: React.FC<ProjectionChartProps> = ({ data }) => {
             />
 
             <Tooltip content={<CustomTooltip />} cursor={{ stroke: '#475569', strokeWidth: 1 }} />
-            <Legend verticalAlign="top" height={36} iconType="circle" />
+            <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '0.05em' }} />
             
             <Area
               yAxisId="left"
@@ -160,7 +161,7 @@ const ProjectionChart: React.FC<ProjectionChartProps> = ({ data }) => {
 
             <Line
               yAxisId="left"
-              name="Portfolio Balance (Base)"
+              name="Portfolio Value (Base)"
               type="monotone"
               dataKey="balance"
               stroke="#6366f1"
